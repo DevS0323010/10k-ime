@@ -49,9 +49,8 @@ if __name__ == "__main__":
                 .replace("‘", "'")
                 .replace("´", "'")
                 .replace("`", "'")
-                .replace("-", " ")
             )
-            spl = [i for i in re.split(r"[^A-Za-z' ]+", stripped) if i.strip() != ""]
+            spl = [i for i in re.split(r"[^A-Za-z'\- ]+", stripped) if i.strip() != ""]
             sents.extend(spl)
         unigrams = {}
         bigrams = {}
@@ -62,10 +61,16 @@ if __name__ == "__main__":
                 lower = word.lower()
                 if lower in TARGETS:
                     print(sent)
-                if lower[0] == "'" and lower[1:] not in APOSTROPHE_STARTS:
+                if (lower[0] == "'" and lower[1:] not in APOSTROPHE_STARTS) or lower[0] == "-":
                     lower = lower[1:]
                     word = word[1:]
-                if len(lower) == 1 and lower not in LETTER_WORDS:
+                if len(lower) <= 1 and lower not in LETTER_WORDS:
+                    prev = START_TOKEN
+                    continue
+                if lower[-1] == "-":
+                    lower = lower[:-1]
+                    word = word[:-1]
+                if len(lower) <= 1 and lower not in LETTER_WORDS:
                     prev = START_TOKEN
                     continue
                 if lower == lower.upper():
