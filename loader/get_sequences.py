@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import unicodedata
@@ -61,7 +62,9 @@ if __name__ == "__main__":
                 lower = word.lower()
                 if lower in TARGETS:
                     print(sent)
-                if (lower[0] == "'" and lower[1:] not in APOSTROPHE_STARTS) or lower[0] == "-":
+                if (lower[0] == "'" and lower[1:] not in APOSTROPHE_STARTS) or lower[
+                    0
+                ] == "-":
                     lower = lower[1:]
                     word = word[1:]
                 if len(lower) <= 1 and lower not in LETTER_WORDS:
@@ -115,19 +118,12 @@ if __name__ == "__main__":
         }
         folder = os.path.join(DATA_DIR, "curated")
         os.makedirs(folder, exist_ok=True)
-        with open(os.path.join(folder, "words.tsv"), "w", encoding="utf-8") as f:
-            for k, v in filtered_words.items():
-                print(k, v, sep="\t", file=f)
-        with open(os.path.join(folder, "bigrams.tsv"), "w", encoding="utf-8") as f:
-            for k, v in filtered_bigrams.items():
-                if sum(v.values()) < 50:
-                    continue
-                print(
-                    k,
-                    "\t".join(
-                        f"{v1}:{v2}"
-                        for v1, v2 in sorted(v.items(), key=lambda x: -x[1])
-                    ),
-                    sep="\t",
-                    file=f,
-                )
+        with open(os.path.join(folder, "words.json"), "w", encoding="utf-8") as f:
+            json.dump(filtered_words, f)
+        final_bigrams = {
+            k: {v1: v2 for v1, v2 in sorted(v.items(), key=lambda x: -x[1])}
+            for k, v in filtered_bigrams.items()
+            if sum(v.values()) >= 50
+        }
+        with open(os.path.join(folder, "bigrams.json"), "w", encoding="utf-8") as f:
+            json.dump(final_bigrams, f)
