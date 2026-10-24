@@ -1,53 +1,18 @@
-import EN_WORDS from "../data/curated/words.json" with { type: "json" };
-import EN_NGRAMS from "../data/curated/bigrams.json" with { type: "json" };
-import ZH_WORDS from "../data/curated/zh_words.json" with { type: "json" };
-import ZH_NGRAMS from "../data/curated/zh_ngrams.json" with { type: "json" };
-import {
-  en_maps,
-  zh_consonant_maps,
-  zh_tone_maps,
-  zh_vowel_maps,
-} from "./maps.js";
+import EN_KEYED from "../data/curated/en_keyed.json" with { type: "json" };
+import ZH_KEYED from "../data/curated/zh_keyed.json" with { type: "json" };
 
-export let en_prefix = {},
-  en_ngram,
-  zh_seqs = {},
-  zh_ngram_seq,
-  zh_ngram_chr,
-  zh_exact = new Map(),
-  zh_keys = [];
-const zh_cache = new Map();
-const titles = ["mr", "mrs", "ms", "dr", "st", "jr", "sr", "vs"];
+const en_exact = new Map(EN_KEYED.exact),
+  en_keys = EN_KEYED.exact.map((p) => p[0]),
+  en_cache = new Map();
+const en_next_data = EN_KEYED.next,
+  en_next_cache = new Map();
+const zh_exact = new Map(ZH_KEYED.exact),
+  zh_keys = ZH_KEYED.exact.map((p) => p[0]),
+  zh_cache = new Map();
+const zh_phr = ZH_KEYED.phrases,
+  zh_phr_keys = Object.keys(zh_phr),
+  zh_chr_cache = new Map();
 
-function get_zh_key(str) {
-  let arr = str.split(" ");
-  let result = "";
-  for (const bpmf of arr) {
-    let consonant = bpmf.at(0),
-      tone = bpmf.at(-1);
-    let vowel = bpmf;
-    if (consonant in zh_consonant_maps) {
-      vowel = vowel.slice(1);
-    } else consonant = "";
-    if (tone in zh_tone_maps) {
-      vowel = vowel.slice(0, -1);
-    } else tone = "";
-    result +=
-      zh_consonant_maps[consonant] + zh_vowel_maps[vowel] + zh_tone_maps[tone];
-  }
-  return result;
-}
-
-function add(kei, v) {
-  const bucket = (zh_seqs[kei] ??= {});
-  for (const [w, c] of Object.entries(v))
-    if (!(w in bucket) || bucket[w] < c) bucket[w] = c;
-}
-function addExact(key, v) {
-  let b = zh_exact.get(key);
-  if (!b) zh_exact.set(key, (b = new Map()));
-  for (const w in v) if (!(b.get(w) >= v[w])) b.set(w, v[w]);
-}
 export function zh_lookup(p) {
   let r = zh_cache.get(p);
   if (r) return r;
@@ -59,10 +24,62 @@ export function zh_lookup(p) {
   }
   const b = new Map();
   for (let i = lo; i < zh_keys.length && zh_keys[i].startsWith(p); i++)
-    for (const [w, c] of zh_exact.get(zh_keys[i]))
+    for (const [w, c] of Object.entries(zh_exact.get(zh_keys[i])))
       if (!(b.get(w) >= c)) b.set(w, c);
   r = [...b].sort((a, b) => b[1] - a[1]);
   zh_cache.set(p, r);
+  return r;
+}
+
+// [[word, count], ...] best first; pass "<s>" at the start of a sentence
+export function en_next(prev) {
+  const key = prev === "<s>" ? prev : prev.toLowerCase().replace(/\.$/, "");
+  let r = en_next_cache.get(key);
+  if (!r) {
+    r = Object.hasOwn(en_next_data, key)
+      ? Object.entries(en_next_data[key])
+      : [];
+    en_next_cache.set(key, r);
+  }
+  return r;
+}
+export function en_lookup(p) {
+  let r = en_cache.get(p);
+  if (r) return r;
+  let lo = 0,
+    hi = en_keys.length;
+  while (lo < hi) {
+    const m = (lo + hi) >> 1;
+    en_keys[m] < p ? (lo = m + 1) : (hi = m);
+  }
+  r = [];
+  for (let i = lo; i < en_keys.length && en_keys[i].startsWith(p); i++)
+    r.push(...Object.entries(en_exact.get(en_keys[i])));
+  r.sort((a, b) => b[1] - a[1]);
+  en_cache.set(p, r);
+  return r;
+}
+
+export function zh_next(left) {
+  let r = zh_chr_cache.get(left);
+  if (r) return r;
+  let lo = 0,
+    hi = zh_phr_keys.length;
+  while (lo < hi) {
+    const m = (lo + hi) >> 1;
+    zh_phr_keys[m] < left ? (lo = m + 1) : (hi = m);
+  }
+  r = [];
+  for (
+    let i = lo;
+    i < zh_phr_keys.length && zh_phr_keys[i].startsWith(left);
+    i++
+  ) {
+    const w = zh_phr_keys[i];
+    if (w.length > left.length) r.push([w.slice(left.length), zh_phr[w]]);
+  }
+  r.sort((a, b) => b[1] - a[1]);
+  zh_chr_cache.set(left, r);
   return r;
 }
 
@@ -71,36 +88,12 @@ function timed(label, fn) {
   fn();
   console.log(`${label}: ${(performance.now() - t0).toFixed(1)} ms`);
 }
+
 document.addEventListener("DOMContentLoaded", async () => {
-  en_ngram = EN_NGRAMS;
-  const start = performance.now();
-  timed("en_prefix", () => {
-    for (const [k, v] of Object.entries(EN_WORDS)) {
-      const lower = k.toLowerCase().replace(/^'/, ""),
-        word = titles.includes(lower) ? k + "." : k;
-      let keymap = "";
-      for (const letter of lower) {
-        keymap += en_maps[letter];
-        en_prefix[keymap] ??= {};
-        en_prefix[keymap][word] = v;
-      }
-    }
+  timed("test_lookup", () => {
+    zh_lookup("6");
+    en_lookup("1");
+    zh_next("巴");
+    console.log(en_next("Mr."));
   });
-  timed("zh_words", () => {
-    for (const k in ZH_WORDS) addExact(get_zh_key(k), ZH_WORDS[k]);
-  });
-  timed("zh_ngrams", () => {
-    for (const k in ZH_WORDS) addExact(get_zh_key(k), ZH_WORDS[k]);
-    for (const k in ZH_NGRAMS)
-      for (const k2 in ZH_NGRAMS[k])
-        addExact(get_zh_key(k + " " + k2), ZH_NGRAMS[k][k2]);
-  });
-  console.log(
-    `total: ${(performance.now() - start).toFixed(1)} ms,`,
-    Object.keys(en_prefix).length,
-    "en prefixes,",
-    zh_exact.size,
-    "zh prefixes",
-  );
-  console.log(zh_exact);
 });

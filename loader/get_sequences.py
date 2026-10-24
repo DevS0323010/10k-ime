@@ -35,6 +35,52 @@ LETTER_WORDS = {"a", "i"}
 APOSTROPHE_STARTS = {"tis", "twas", "cause", "em"}
 NAME_CAP = 1000
 TARGETS = {}
+
+# 7-key layout (same as en_maps in maps.js): key number for each letter.
+# Apostrophes and hyphens go on the function key "-".
+KEY_GROUPS = ["abcd", "efgh", "ijksz", "lmn", "opqr", "t", "uvwxy"]
+KEY_OF = {c: str(i + 1) for i, g in enumerate(KEY_GROUPS) for c in g}
+KEY_OF["'"] = KEY_OF["-"] = "-"
+# Shown with a period after them ("Mr."); the period is not typed.
+TITLES = {"mr", "mrs", "ms", "dr", "st", "jr", "sr", "vs"}
+TITLE_PERIOD = re.compile(r"\b(" + "|".join(TITLES) + r")\.", re.IGNORECASE)
+
+
+def by_count(d):
+    return dict(sorted(d.items(), key=lambda x: (-x[1], x[0])))
+
+
+def shown_form(word):
+    """How a word appears in the candidate bar: titles get their period ("Mr.")."""
+    return word + "." if word.lower() in TITLES else word
+
+
+def build_keyed(words, bigrams):
+    """en_keyed.json, the only file the web app loads:
+      {"exact": [[code, {word: count}], ...],
+       "next":  {"<s>": {"I": 317913, ...}, "i": {"don't": 17200, ...}, ...}}
+    - "exact": every word under its 7-key code, sorted by code, words most
+      frequent first. A list, not an object, because JS would move number-like
+      keys such as "1" or "13" to the front of an object.
+    - "next": the words that follow each word (bigrams), keyed by the previous
+      word in lower case ("<s>" = start of a sentence), most frequent first.
+    """
+    exact = {}
+    for word, count in words.items():
+        code = "".join(KEY_OF[c] for c in word.lower().lstrip("'"))
+        exact.setdefault(code, {})[shown_form(word)] = count
+    following = {}
+    for prev, nexts in bigrams.items():
+        key = prev if prev == START_TOKEN else prev.lower()
+        bucket = following.setdefault(key, {})
+        for word, count in nexts.items():
+            bucket[shown_form(word)] = count
+    return {
+        "exact": [[code, by_count(exact[code])] for code in sorted(exact)],
+        "next": {k: by_count(following[k]) for k in sorted(following)},
+    }
+
+
 if __name__ == "__main__":
     with open(
         os.path.join(DATA_DIR, "raw", "tatoeba", "eng_sentences.tsv"),
@@ -51,6 +97,8 @@ if __name__ == "__main__":
                 .replace("´", "'")
                 .replace("`", "'")
             )
+            # "Mr. Smith": drop the title's period so it doesn't split the sentence
+            stripped = TITLE_PERIOD.sub(r"\1", stripped)
             spl = [i for i in re.split(r"[^A-Za-z'\- ]+", stripped) if i.strip() != ""]
             sents.extend(spl)
         unigrams = {}
@@ -116,14 +164,15 @@ if __name__ == "__main__":
             for i, j in bigrams.items()
             if i in filtered_cases
         }
+        final_bigrams = {
+            k: v for k, v in filtered_bigrams.items() if sum(v.values()) >= 50
+        }
         folder = os.path.join(DATA_DIR, "curated")
         os.makedirs(folder, exist_ok=True)
-        with open(os.path.join(folder, "words.json"), "w", encoding="utf-8") as f:
-            json.dump(filtered_words, f)
-        final_bigrams = {
-            k: {v1: v2 for v1, v2 in sorted(v.items(), key=lambda x: -x[1])}
-            for k, v in filtered_bigrams.items()
-            if sum(v.values()) >= 50
-        }
-        with open(os.path.join(folder, "bigrams.json"), "w", encoding="utf-8") as f:
-            json.dump(final_bigrams, f)
+        keyed = build_keyed(filtered_words, final_bigrams)
+        out_file = os.path.join(folder, "en_keyed.json")
+        with open(out_file, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(keyed, f, separators=(",", ":"))
+        n_next = sum(len(v) for v in keyed["next"].values())
+        print(f"{len(filtered_words)} words under {len(keyed['exact'])} key codes, "
+              f"{n_next} bigrams after {len(keyed['next'])} words -> {os.path.abspath(out_file)}")

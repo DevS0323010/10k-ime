@@ -1,16 +1,5 @@
-"""Build data/zh_words.json and data/zh_ngrams.json from the McBopomofo files
-(run download_chinese.py first). Same compact JSON style as words.json / bigrams.json.
-
-zh_words.json: single characters (字), grouped by pronunciation:
-  {"ㄦˇ": {"爾": 4912, "耳": 1533, ...}, ...}
-
-zh_ngrams.json: words of 2 or more characters (詞), grouped by first syllable,
-then by the rest of the syllable sequence (the same shape as bigrams.json):
-  {"ㄨㄛˇ": {"ㄇㄣ˙": {"我們": 73422}, ...}, ...}
-  The rest of a longer word is space-separated: "ㄧ" -> "ㄕˊ ㄦˋ ㄋㄧㄠˇ" -> 一石二鳥
-
-Syllables keep their tone marks (first tone has no mark). Keys are in Zhuyin
-order (ㄅㄆㄇㄈ..., tones 1-2-3-4-5); words are most frequent first.
+"""Build data/curated/zh_keyed.json, the only Chinese file the web app loads,
+from the McBopomofo files (run download_chinese.py first).
 
 Every word in McBopomofo's dictionary is
 kept, even with a count of 0: about half of the 4-character idioms (成語) were not
@@ -28,17 +17,28 @@ A word with several readings is listed under each reading:
     reading give the full count to every reading.
   - longer words: every listed reading keeps the full count (these are mostly
     tone-change variants like 一個 ㄧ/ㄧˊ/ㄧˋ, which people may type either way).
+
+zh_keyed.json:
+  {"exact":   [["111e", {"八": 13625, "吧": 6496, ...}], ...],
+   "phrases": {"一一": 11, "一下": 3570, ...}}
+  - "exact": every character and word under the 10-key code of its full
+    reading, as [code, {word: count}] pairs sorted by code (a plain list, so
+    JS keeps the order: it would move number-like object keys to the front).
+  - "phrases": every word of 2 or more characters, sorted, for predicting
+    the next characters after what was already typed.
+  When one word lands on the same code twice (readings that type the same,
+  such as ㄛ and ㄜ), it keeps the higher count instead of adding them.
+
+The 10-key code, per syllable: 2 digits for the initial (60 = no initial),
+1-2 digits for the rest, then a tone letter: e = 1st, c = ˊ, a = ˇ, b = ˋ, d = ˙.
+KEY_CONSONANTS / KEY_VOWELS / KEY_TONES must match maps.js.
 """
 import json
 import os
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 IN_DIR = os.path.join(DATA_DIR, "raw", "mcbopomofo")
-WORDS_FILE = os.path.join(DATA_DIR, "curated", "zh_words.json")
-NGRAMS_FILE = os.path.join(DATA_DIR, "curated", "zh_ngrams.json")
-
-# Sort order for syllables: Zhuyin letters in alphabet order, then tone.
-TONES = {"": 1, "ˊ": 2, "ˇ": 3, "ˋ": 4, "˙": 5}
+KEYED_FILE = os.path.join(DATA_DIR, "curated", "zh_keyed.json")
 
 MIN_COUNT = 0  # the word list is hand-checked, so a count of 0 just means "not seen in the corpus"
 
@@ -46,6 +46,29 @@ CHARSETS = {"big5", "big5e"}  # keep words whose characters are all in these set
 
 SECOND_READING = 10  # divisor for heterophony2 readings
 OTHER_READING = 100  # divisor for the remaining readings of a char with a marked usual reading
+
+# 10-key codes (same as maps.js).
+KEY_CONSONANTS = {
+    "": "60",
+    "ㄅ": "11", "ㄆ": "12", "ㄇ": "13", "ㄈ": "14",
+    "ㄉ": "21", "ㄊ": "22", "ㄋ": "23", "ㄌ": "24",
+    "ㄍ": "31", "ㄎ": "32", "ㄏ": "33",
+    "ㄐ": "41", "ㄑ": "42", "ㄒ": "43",
+    "ㄓ": "51", "ㄔ": "52", "ㄕ": "53", "ㄖ": "54",
+    "ㄗ": "41", "ㄘ": "42", "ㄙ": "43",
+}
+KEY_VOWELS = {
+    "": "9", "ㄦ": "9",
+    "ㄚ": "1", "ㄛ": "5", "ㄜ": "5", "ㄝ": "5",
+    "ㄞ": "11", "ㄟ": "51", "ㄠ": "12", "ㄡ": "52",
+    "ㄢ": "13", "ㄣ": "53", "ㄤ": "14", "ㄥ": "54",
+    "ㄧ": "61", "ㄧㄚ": "2", "ㄧㄛ": "62", "ㄧㄜ": "61", "ㄧㄝ": "6", "ㄧㄞ": "21",
+    "ㄧㄠ": "22", "ㄧㄡ": "62", "ㄧㄢ": "23", "ㄧㄣ": "63", "ㄧㄤ": "24", "ㄧㄥ": "64",
+    "ㄨ": "72", "ㄨㄚ": "3", "ㄨㄛ": "7", "ㄨㄞ": "31", "ㄨㄟ": "71",
+    "ㄨㄢ": "33", "ㄨㄣ": "73", "ㄨㄤ": "34", "ㄨㄥ": "74",
+    "ㄩ": "4", "ㄩㄝ": "8", "ㄩㄢ": "43", "ㄩㄣ": "83", "ㄩㄥ": "84",
+}
+KEY_TONES = {"": "e", "ˊ": "c", "ˇ": "a", "ˋ": "b", "˙": "d"}
 
 
 def is_zhuyin_symbol(word):
@@ -116,51 +139,53 @@ def build():
     return rows, missing
 
 
-def zhuyin_key(zhuyin):
-    """Sort key: letters first, then tone, syllable by syllable."""
-    key = []
-    for syl in zhuyin.split(" "):
-        tone = syl[-1] if syl[-1] in TONES else ""
-        key.append((syl[: len(syl) - len(tone)], TONES[tone]))
-    return key
-
-
-def sort_keys(d):
-    return {k: d[k] for k in sorted(d, key=zhuyin_key)}
-
-
 def by_count(d):
     return dict(sorted(d.items(), key=lambda x: (-x[1], x[0])))
 
 
-def build_words(rows):
-    """{zhuyin: {char: count}} for single characters."""
-    out = {}
-    for word, count, zhuyin in rows:
-        if len(word) == 1:
-            out.setdefault(zhuyin, {})[word] = count
-    return {k: by_count(v) for k, v in sort_keys(out).items()}
+_syllable_codes = {}
 
 
-def build_ngrams(rows):
-    """{first syllable: {rest of the syllables: {word: count}}} for longer words."""
-    out = {}
+def syllable_code(syl):
+    """10-key code of one syllable, e.g. "ㄅㄚ" -> "111e"."""
+    code = _syllable_codes.get(syl)
+    if code is None:
+        consonant = syl[0] if syl[0] in KEY_CONSONANTS else ""
+        tone = syl[-1] if syl[-1] in KEY_TONES else ""
+        vowel = syl[len(consonant): len(syl) - len(tone)]
+        if vowel not in KEY_VOWELS:
+            raise ValueError(f"no 10-key code for {syl!r}")
+        code = KEY_CONSONANTS[consonant] + KEY_VOWELS[vowel] + KEY_TONES[tone]
+        _syllable_codes[syl] = code
+    return code
+
+
+def key_code(zhuyin):
+    return "".join(syllable_code(s) for s in zhuyin.split(" "))
+
+
+def build_keyed(rows):
+    """{"exact": [[code, {word: count}], ...], "phrases": {word: count}} for the web app."""
+    exact, phrases = {}, {}
     for word, count, zhuyin in rows:
-        if len(word) > 1:
-            first, rest = zhuyin.split(" ", 1)
-            out.setdefault(first, {}).setdefault(rest, {})[word] = count
-    return {k: {r: by_count(w) for r, w in sort_keys(v).items()} for k, v in sort_keys(out).items()}
+        bucket = exact.setdefault(key_code(zhuyin), {})
+        if bucket.get(word, -1) < count:
+            bucket[word] = count
+        if len(word) > 1 and phrases.get(word, -1) < count:
+            phrases[word] = count
+    return {
+        "exact": [[k, by_count(exact[k])] for k in sorted(exact)],
+        "phrases": {w: phrases[w] for w in sorted(phrases)},
+    }
 
 
 if __name__ == "__main__":
     rows, missing = build()
-    words, ngrams = build_words(rows), build_ngrams(rows)
-    for path, data in ((WORDS_FILE, words), (NGRAMS_FILE, ngrams)):
-        with open(path, "w", encoding="utf-8", newline="\n") as f:
-            json.dump(data, f, ensure_ascii=False)
-    n_words = sum(len(v) for v in words.values())
-    n_ngrams = sum(len(w) for v in ngrams.values() for w in v.values())
-    print(f"{n_words} character readings under {len(words)} pronunciations -> {os.path.abspath(WORDS_FILE)}")
-    print(f"{n_ngrams} word readings under {len(ngrams)} first syllables -> {os.path.abspath(NGRAMS_FILE)}")
+    keyed = build_keyed(rows)
+    os.makedirs(os.path.dirname(KEYED_FILE), exist_ok=True)
+    with open(KEYED_FILE, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(keyed, f, ensure_ascii=False, separators=(",", ":"))
+    print(f"{len(rows)} word readings under {len(keyed['exact'])} key codes, "
+          f"{len(keyed['phrases'])} phrases -> {os.path.abspath(KEYED_FILE)}")
     if missing:
         print(f"({missing} counted words had no reading and were skipped)")
