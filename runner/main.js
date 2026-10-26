@@ -490,7 +490,7 @@ function on_key(id, key) {
       navigator.clipboard?.writeText(st.text + st.after);
       st.mode = "main";
       break;
-    case "tts":
+    case "tts": // stays in the menu, like caps
       speak();
       break;
     case "caps": // stays in the menu so it can be pressed again
@@ -528,7 +528,7 @@ const KIND = {
   // Function keys, by what they do:
   //   menu    opens another set of keys (Fn, 123, ?!, abc…, "…" in the bar)
   //   edit    changes the text right away (⌫, ↵, ⌧)
-  //   action  leaves the text alone: ⇧, ⧉, 🔊, EN⇄中, ▲ (closes the candidate list)
+  //   action  leaves the text alone: ⇧, ⧉, 🔊, 🌐, ✕ (closes the candidate list)
   //   fn      Fn and ✕, which share the top-left corner: their own color
   fn: "fn", exit: "fn", mode: "menu", punc: "menu",
   bs: "edit", newline: "edit", clear: "edit",

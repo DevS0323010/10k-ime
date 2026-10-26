@@ -4,13 +4,13 @@
 // lam = 0.7 come from tune_en_rank.py (English only so far).
 //
 // Returned list: slot 1 = best word with exactly the typed code, then the other
-// exact words and the 3 best longer words (score / N), sorted together.
+// exact words and the N_LONGER best longer words (score / N), sorted together.
 import {
   en_code, en_lookup, en_next, en_next_keys, en_next_sum, en_uni, en_uni_total,
   build_zh_index, zh_exact, zh_lookup, zh_next, zh_next_keys, zh_next_sum, zh_right_codes, zh_count, zh_uni_total,
 } from "./read_data.js";
 
-const N_LONGER = 5; // longer words shown (tune_en_rank.py: gains stop after 3)
+const N_LONGER = 5; // longer words shown (raised from 3, which tune_en_rank.py found best for English)
 // Chinese keys collide far more than English, so when the keys so far match no
 // whole word (an unfinished syllable such as ㄍㄨㄛ without a tone), every
 // candidate is a longer word: show many, for the expanded list to page through.
@@ -80,7 +80,7 @@ export function zh_rank(text, seq, N = 8, lam = 0.7) {
   const uni_score = (w) => ((1 - l) * (zh_count(w) + 1)) / zh_uni_total;
   const val_map = new Map();
   for (const w in exact) val_map.set(w, uni_score(w));
-  for (const s of seqs) { // best longer words by count; context words are added below
+  for (const s of seqs) { // best `longer` words by count; context words are added below
     let taken = 0;
     for (const [w] of zh_lookup(s)) {
       if (taken >= longer) break;
