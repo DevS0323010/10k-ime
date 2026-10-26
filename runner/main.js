@@ -20,6 +20,9 @@ const st = {
   page: 0,
   expanded: false, // "…" opened: candidates cover the keys
   xpage: 0, // page of the expanded list
+  sel: 0, // highlighted candidate (arrow keys move it; Space takes it)
+  sel_moved: false, // the arrows moved the highlight since the list changed
+  just_done: false, // a word was just finished: the arrows browse the next-word suggestions
   caps: 0, // 0 lower, 1 Title (next word only), 2 SCREAMING (stays)
   tap: null, // multi-tap character not yet confirmed {id, base, variants, i}
 };
@@ -227,6 +230,8 @@ function layout() {
 function refresh_cands() {
   st.page = 0;
   st.expanded = false;
+  st.sel = 0;
+  st.sel_moved = false;
   if (st.mode !== "main") return (st.cands = []);
   if (st.lang === "en") st.cands = en_rank(en_prev(), st.en_buf);
   else st.cands = zh_rank(st.text, zh_composing() ? zh_seqs() : "");
@@ -241,6 +246,7 @@ function per_page() {
 }
 
 function commit(word) {
+  st.just_done = true;
   if (st.lang === "en") {
     st.text += en_case(word) + (st.after.startsWith(" ") ? "" : " ");
     if (st.caps === 1) st.caps = 0; // Title is one-shot
@@ -256,7 +262,7 @@ function commit(word) {
 // Commit the top candidate if a word is being typed (before fn / punctuation).
 function commit_pending() {
   const typing = st.lang === "en" ? st.en_buf : zh_composing();
-  if (typing && st.cands.length) commit(st.cands[0]);
+  if (typing && st.cands.length) commit(st.cands[st.sel] ?? st.cands[0]);
   st.en_buf = "";
   st.zh_done = [];
   st.zh_cur = {};
@@ -278,7 +284,7 @@ function on_candidate(col) {
 // Expanded list: candidates in the left 4 columns (12 per page); the right
 // column is ✕ close, ▲ previous page, ▼ next page. Returns [label, action]
 // for each of the 15 slots, row by row; off = the page button can't be used.
-const X_PER = 12, X_SIDE = { 4: ["✕", "close"], 9: ["▲", "prev"], 14: ["▼", "next"] };
+const X_COLS = 4, X_PER = 12, X_SIDE = { 4: ["✕", "close"], 9: ["▲", "prev"], 14: ["▼", "next"] };
 function expanded_slots() {
   const pages = Math.max(1, Math.ceil(st.cands.length / X_PER));
   const out = [];
@@ -298,8 +304,8 @@ function on_expanded(slot) {
   const [, act, off] = expanded_slots()[slot];
   if (off) return;
   if (act === "close") st.expanded = false;
-  else if (act === "prev") st.xpage--;
-  else if (act === "next") st.xpage++;
+  else if (act === "prev") st.sel = --st.xpage * X_PER;
+  else if (act === "next") st.sel = ++st.xpage * X_PER;
   else if (typeof act === "number") {
     commit(st.cands[act]);
     refresh_cands();
@@ -412,6 +418,7 @@ globalThis.speechSynthesis?.getVoices(); // the voice list loads lazily in some 
 
 function on_key(id, key) {
   if (key.off) return;
+  st.just_done = false; // any key ends browsing the suggestions (committing sets it again)
   const tapping = st.tap; // a multi-tap character waiting to be confirmed
   if (!["tap", "raw", "letter", "pair", "quote"].includes(key.act)) st.tap = null;
   const c = st.zh_cur;
@@ -423,9 +430,11 @@ function on_key(id, key) {
     // ---- shared main
     case "space":
       if (st.mode === "main" && st.lang === "en" && st.en_buf) {
-        if (st.cands.length) commit(st.cands[0]); // keys that match no word stay for backspace
+        if (st.cands.length) commit(st.cands[st.sel] ?? st.cands[0]); // keys that match no word stay for backspace
       } else if (st.mode === "main" && st.lang === "zh" && zh_composing()) {
-        if (st.cands.length) commit(st.cands[0]);
+        if (st.cands.length) commit(st.cands[st.sel] ?? st.cands[0]);
+      } else if (st.mode === "main" && st.sel_moved && st.cands[st.sel]) {
+        commit(st.cands[st.sel]); // a suggestion picked with the arrows
       } else if (!tapping) insert_raw(" "); // with a multi-tap character waiting, Space only confirms it
       break;
     case "bs":
@@ -610,7 +619,7 @@ function draw_buttons() {
       el.disabled = !!off;
       el.classList.remove("on");
       el.classList.toggle("off", !!off);
-      el.classList.toggle("first", s === 0 && st.xpage === 0);
+      el.classList.toggle("first", act === st.sel);
       el.dataset.kind = typeof act === "number" ? "cand" : act === null ? "empty" : act === "close" ? "action" : "menu";
     });
     return fit_all();
@@ -623,6 +632,7 @@ function draw_buttons() {
       el.disabled = !!key.off;
       el.classList.toggle("off", !!key.off);
       el.classList.toggle("on", !!key.on);
+      el.classList.remove("first"); // left over from the expanded list
       el.dataset.kind = KIND[key.act] ?? "input";
     }
 
@@ -635,7 +645,7 @@ function draw_buttons() {
       el.dataset.kind = "menu";
     } else el.innerText = start + i < st.cands.length ? shown(st.cands[start + i]) : "";
     if (el.innerText === "") el.dataset.kind = "empty";
-    el.classList.toggle("first", i === 0 && el.innerText !== "");
+    el.classList.toggle("first", el.dataset.kind === "cand" && start + i === st.sel);
   }
   fit_all();
 }
@@ -664,7 +674,10 @@ if (is_textarea) {
 }
 
 function pending_text() {
-  if (st.lang === "en" && st.en_buf) return st.cands[0] ? en_case(st.cands[0]) : st.en_buf;
+  if (st.lang === "en" && st.en_buf) {
+    const w = st.cands[st.sel] ?? st.cands[0];
+    return w ? en_case(w) : st.en_buf;
+  }
   if (st.lang === "zh" && zh_composing())
     return [...st.zh_done, st.zh_cur].map(zh_syllable_label).filter((s) => s).join(" ") || "…";
   return "";
@@ -707,6 +720,7 @@ function cursor_moved() {
   const p = box.selectionStart;
   if (st.en_buf || zh_composing()) return draw_text(); // keep the cursor while a word is being typed
   if (p === st.text.length || box.selectionStart !== box.selectionEnd) return;
+  st.just_done = false;
   const full = st.text + st.after;
   st.text = full.slice(0, p);
   st.after = full.slice(p);
@@ -730,6 +744,81 @@ document.querySelectorAll(".btn").forEach((button) => {
     else on_key(button.id, layout()[row - 1][col]);
     draw();
   });
+});
+
+// Computer keyboard: each on-screen key is a block of 4 physical keys.
+//   [12qw] [34er] [56ty] [78ui] [90op]
+//   [aszx] [dfcv] [ghbn] [jkm,] [l;./]
+// While a word is being typed (or the list is open), the arrow keys move the
+// highlight through the candidates and Space takes the highlighted one.
+// Otherwise the arrows move the text cursor and Space is the ␣ key.
+// By key position (e.code), so it works with any keyboard layout or input method.
+const KEYBOARD = {};
+[
+  ["10", "Digit1 Digit2 KeyQ KeyW"], ["11", "Digit3 Digit4 KeyE KeyR"], ["12", "Digit5 Digit6 KeyT KeyY"],
+  ["13", "Digit7 Digit8 KeyU KeyI"], ["14", "Digit9 Digit0 KeyO KeyP Backspace"],
+  ["20", "KeyA KeyS KeyZ KeyX"], ["21", "KeyD KeyF KeyC KeyV"], ["22", "KeyG KeyH KeyB KeyN"],
+  ["23", "KeyJ KeyK KeyM Comma"], ["24", "KeyL Semicolon Period Slash"],
+].forEach(([id, codes]) => codes.split(" ").forEach((c) => (KEYBOARD[c] = id)));
+
+const ARROW = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -X_COLS, ArrowDown: X_COLS };
+
+// Move the highlight by d; the list opens when it leaves the bar, and closes
+// when it goes up out of the list's first row.
+function move_sel(d) {
+  const n = st.cands.length;
+  if (st.expanded && d < 0 && st.sel + d < 0 && st.xpage === 0) {
+    st.expanded = false;
+    return;
+  }
+  st.sel = Math.max(0, Math.min(n - 1, st.sel + d));
+  st.sel_moved = true;
+  if (!st.expanded && st.sel >= per_page()) st.expanded = true;
+  if (st.expanded) st.xpage = Math.floor(st.sel / X_PER);
+}
+
+// Arrows browse candidates while a word is being typed, while the list is
+// open, right after a word is finished (the next-word suggestions), and
+// before the first word of the text or of a line.
+function composing() {
+  return !!st.en_buf || (st.lang === "zh" && zh_composing());
+}
+function picking() {
+  if (st.mode !== "main" || !st.cands.length) return false;
+  // First word of the text or of a new line, at the end: no cursor to move anyway.
+  const line_start = (st.text === "" || st.text.endsWith("\n")) && st.after === "";
+  return st.expanded || composing() || st.just_done || line_start;
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return; // leave Ctrl+C and the like alone
+  // Space takes a suggestion only once the arrows have picked one, so a
+  // plain Space after a word still types a space.
+  const space_picks = st.expanded || composing() || st.sel_moved;
+  if ((e.code in ARROW || (e.code === "Space" && space_picks)) && picking()) {
+    e.preventDefault();
+    if (e.code === "Space") {
+      if (e.repeat) return;
+      commit(st.cands[st.sel]);
+      refresh_cands();
+    } else move_sel(ARROW[e.code]);
+    st.tap = null;
+    return draw();
+  }
+  if (e.code === "Space") { // the ␣ key of the current layout, if it has one
+    e.preventDefault();
+    const pos = [0, 1].flatMap((r) => [0, 1, 2, 3, 4].map((c) => [r, c])).find(([r, c]) => layout()[r][c].act === "space");
+    if (pos && !e.repeat && !st.expanded) $("" + (pos[0] + 1) + pos[1]).click();
+    return;
+  }
+  const id = KEYBOARD[e.code];
+  if (!id) return;
+  e.preventDefault();
+  if (e.repeat) return; // holding a key would cycle multi-tap or delete too fast
+  const el = $(id);
+  el.classList.add("pressed"); // show which key was hit
+  setTimeout(() => el.classList.remove("pressed"), 120);
+  el.click();
 });
 
 if (is_textarea) {

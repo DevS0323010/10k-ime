@@ -23,7 +23,7 @@ The screen has a text box on top, then a **3×5 grid**: one row of 5 candidates 
 
 ### Candidate bar & expanded list
 
-Every key press updates the candidates. The first slot (shown in blue) is the best word whose code matches the keys exactly; the others are the remaining exact matches and up to 5 longer words, sorted together. **Space** commits the first candidate, and tapping any slot commits that one.
+Every key press updates the candidates. The first slot is the best word whose code matches the keys exactly; the others are the remaining exact matches and up to 5 longer words, sorted together. The highlighted candidate (blue outline, the first one unless you move it with the arrow keys) is what **Space** commits, and tapping any slot commits that one.
 
 When there are more than 5 candidates, the 5th slot becomes **…**. It opens the full list over the keys: 4 candidates per row on all 3 rows (12 per page), with the right column used for **✕** (collapse), **▲** (previous page) and **▼** (next page).
 
@@ -60,6 +60,21 @@ Single letters, punctuation, numbers and single Zhuyin use multi-tap with **no t
 - **Backspace**: steps back one stage at a time while composing, then deletes one character.
 - **CJK punctuation**: the **?!** key (on the first Chinese stage and in Fn) has ，、。…：；！？—～《》「」『』（）.
 - **Single Zhuyin**: Fn → ㄅㄆㄇ… and ㄚㄛㄜ… type individual Zhuyin and tone marks with multi-tap.
+
+### Computer keyboard
+
+The app can also be driven from a computer keyboard, without key combinations. Each on-screen key is a block of 4 physical keys, matched by key position (`KeyboardEvent.code`), so it works with any keyboard layout or with a system input method switched on:
+
+```
+[12qw] [34er] [56ty] [78ui] [90op]   ← top row of keys
+[aszx] [dfcv] [ghbn] [jkm,] [l;./]   ← bottom row of keys
+```
+
+- **Arrow keys** move the highlight through the candidates. Going past the 4th candidate opens the expanded list, where ↑ ↓ move by rows and turn pages; moving up out of the first row closes it.
+- **Space** commits the highlighted candidate.
+- The arrows pick candidates while a word is being typed, while the expanded list is open, right after a word is finished (to browse next-word suggestions), and before the first word of the text or of a new line. Any other key, or tapping the text, gives the arrows back to the text cursor.
+- Right after a word, a plain Space still types a space; it only takes a suggestion once the arrows have moved the highlight.
+- The pressed on-screen key flashes. Holding a key does not repeat it, and Ctrl / Alt / ⌘ shortcuts are left to the browser.
 
 ### Read aloud
 
