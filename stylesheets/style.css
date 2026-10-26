@@ -205,7 +205,7 @@ body {
     border-radius: 999px;
     background: var(--action-bg);
     color: var(--action-fg);
-    font: 600 0.85rem / 1.4 var(--font);
+    font: 600 3rem var(--font);
     pointer-events: none;
 }
 

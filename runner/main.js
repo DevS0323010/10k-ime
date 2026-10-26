@@ -492,7 +492,6 @@ function on_key(id, key) {
       break;
     case "tts":
       speak();
-      st.mode = "main";
       break;
     case "caps": // stays in the menu so it can be pressed again
       st.caps = (st.caps + 1) % 3;
@@ -549,7 +548,7 @@ const KEY_MAX = [0.4, 0.46], CAND_MAX = [0.46, 0.62], ROOM_W = 0.86;
 const ZHUYIN = /^[\u3100-\u312f\u31a0-\u31bf/\s]+$/u, TONES = /^[ˇˋˊ˙ˉ]+$/u;
 const CJK_PUNCT = /^[\u3000-\u303f\uff00-\uff65…—\s]+$/u;
 // Some key symbols are small glyphs too.
-const SYMBOL_SCALE = { [SYM.space]: 1.8, [SYM.tts]: 1.3, [SYM.copy]: 1.15, [SYM.newline]: 1.15 };
+const SYMBOL_SCALE = { [SYM.space]: 1.8, [SYM.tts]: 1.3, [SYM.lang]: 1.2, [SYM.copy]: 1.15, [SYM.newline]: 1.15 };
 const glyph_scale = (t) =>
   SYMBOL_SCALE[t] ?? (TONES.test(t) ? 2.4 : ZHUYIN.test(t) || CJK_PUNCT.test(t) ? 1.3 : 1);
 

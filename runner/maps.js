@@ -71,7 +71,7 @@ export const zh_tones = [["ˇ", "a"], ["ˋ", "b"], ["ˊ", "c"], ["˙", "d"], ["�
 const K = (label, act, val) => ({ label, act, val });
 // Keys that do the same thing in English and Chinese share one symbol label.
 export const SYM = {
-  exit: "✕", space: "␣", bs: "⌫", fn: "Fn", newline: "↵", punc: "?!", lang: "EN⇄中",
+  exit: "✕", space: "␣", bs: "⌫", fn: "Fn", newline: "↵", punc: "?!", lang: "🌐\uFE0E",
   clear: "⌧", number: "123", caps: "⇧", caps_lock: "⇪", copy: "⧉", tts: "🔊\uFE0E",
 };
 const EXIT = K(SYM.exit, "exit"), SPACE = K(SYM.space, "space"), BS = K(SYM.bs, "bs");
