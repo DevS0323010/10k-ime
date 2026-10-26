@@ -115,3 +115,17 @@ export const zh_vowel_fallback = {
   4: { 1: "4", 2: "4", 3: "43", 4: "84" },
   8: { 1: "4", 2: "4", 3: "83", 4: "84" },
 };
+
+export const layout = {
+  "en": [
+    ["Fn", "Space", "ABCD", "EFGH", "<<"],
+    ["IJKSZ", "LMN", "OPQR", "T", "UVWXY"]
+  ]
+}
+
+export const mapping = {
+  "en": [
+    ["-", "Space", "1", "2", "<<"],
+    ["3", "4", "5", "6", "7"]
+  ]
+}
