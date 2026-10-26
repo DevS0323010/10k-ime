@@ -10,13 +10,17 @@ import {
   build_zh_index, zh_exact, zh_lookup, zh_next, zh_next_keys, zh_next_sum, zh_right_codes, zh_count, zh_uni_total,
 } from "./read_data.js";
 
-const N_LONGER = 3; // longer words shown (tune_en_rank.py: gains stop after 3)
+const N_LONGER = 5; // longer words shown (tune_en_rank.py: gains stop after 3)
+// Chinese keys collide far more than English, so when the keys so far match no
+// whole word (an unfinished syllable such as ㄍㄨㄛ without a tone), every
+// candidate is a longer word: show many, for the expanded list to page through.
+const ZH_N_PREFIX = 45; // 3 pages of the expanded list
 
-function order(exact_list, prefix_list) {
+function order(exact_list, prefix_list, longer = N_LONGER) {
   exact_list.sort((a, b) => b[1] - a[1]);
   prefix_list.sort((a, b) => b[1] - a[1]);
   const options = exact_list.length ? [exact_list[0][0]] : [];
-  const rest = [...exact_list.slice(1), ...prefix_list.slice(0, N_LONGER)].sort((a, b) => b[1] - a[1]);
+  const rest = [...exact_list.slice(1), ...prefix_list.slice(0, longer)].sort((a, b) => b[1] - a[1]);
   for (const [w] of rest) options.push(w);
   return options;
 }
@@ -54,51 +58,45 @@ export function zh_context(text, max = 4) {
   return "";
 }
 
-// text: committed text so far; seq: keys typed. Counts get +1 so count-0
-// dictionary words (many idioms) can still rank.
+// text: committed text so far; seq: keys typed, as one code or a list of
+// alternative codes (e.g. Ø+ㄧㄚ+.1 is both ㄧ and ㄧㄞ). Counts get +1 so
+// count-0 dictionary words (many idioms) can still rank.
 export function zh_rank(text, seq, N = 8, lam = 0.7) {
   build_zh_index();
+  const seqs = (Array.isArray(seq) ? seq : [seq]).filter((s) => s);
   const left = zh_context(text);
   const nt = left ? zh_next_sum(left) : 0;
   const l = nt ? lam : 0;
-  const exact = seq ? zh_exact.get(seq) ?? {} : {};
-  const next = left ? (seq ? zh_next_keys(left, seq) : zh_next(left)) : [];
-  const next_set = new Set(next.map(([w]) => w));
+
+  const exact = {};
+  for (const s of seqs) Object.assign(exact, zh_exact.get(s));
+  const prefix_only = seqs.length > 0 && Object.keys(exact).length === 0;
+  const longer = prefix_only ? ZH_N_PREFIX : N_LONGER;
+  const next_map = new Map();
+  if (left)
+    for (const [w, c] of seqs.length ? seqs.flatMap((s) => zh_next_keys(left, s)) : zh_next(left))
+      if (!(next_map.get(w) >= c)) next_map.set(w, c);
 
   const uni_score = (w) => ((1 - l) * (zh_count(w) + 1)) / zh_uni_total;
   const val_map = new Map();
   for (const w in exact) val_map.set(w, uni_score(w));
-  if (seq) { // best longer words by count; context words are added below
+  for (const s of seqs) { // best longer words by count; context words are added below
     let taken = 0;
-    for (const [w] of zh_lookup(seq)) {
-      if (taken >= N_LONGER) break;
-      if (w in exact || next_set.has(w)) continue;
+    for (const [w] of zh_lookup(s)) {
+      if (taken >= longer) break;
+      if (w in exact || next_map.has(w) || val_map.has(w)) continue;
       val_map.set(w, uni_score(w));
       taken++;
     }
   }
-  for (const [w, c] of next) val_map.set(w, (val_map.get(w) ?? uni_score(w)) + (l * (c + 1)) / nt);
+  for (const [w, c] of next_map) val_map.set(w, (val_map.get(w) ?? uni_score(w)) + (l * (c + 1)) / nt);
 
   const exact_list = [], prefix_list = [];
   for (const [w, v] of val_map) {
-    const is_exact = seq && (w in exact || (next_set.has(w) && zh_right_codes(left, w).includes(seq)));
+    const is_exact = seqs.length > 0 &&
+      (w in exact || (next_map.has(w) && zh_right_codes(left, w).some((c) => seqs.includes(c))));
     if (is_exact) exact_list.push([w, v]);
     else prefix_list.push([w, v / N]);
   }
-  return order(exact_list, prefix_list);
+  return order(exact_list, prefix_list, prefix_only && !exact_list.length ? ZH_N_PREFIX : N_LONGER);
 }
-
-function timed(label, fn) {
-  const t0 = performance.now();
-  fn();
-  console.log(`${label}: ${(performance.now() - t0).toFixed(1)} ms`);
-}
-
-
-document.addEventListener("DOMContentLoaded", async () => {
-  timed("test_lookup", () => {
-    console.log(en_rank("you", "1"));
-    console.log(en_rank("", "16"));
-    console.log(en_rank("hello", ""));
-  });
-});

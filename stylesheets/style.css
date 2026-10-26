@@ -1,4 +1,70 @@
-/* Reset margins and force layout container to fill viewport */
+/* 10-key IME: text on top, candidate bar, then the 2 x 5 keys.
+   Colors are tokens so light and dark mode only swap values.
+   Label size is set per button by fit_text() in main.js (largest that fits). */
+
+:root {
+    --bg: #eef0f3;
+    --surface: #ffffff;
+    --text: #1d2129;
+    --border: #d5d9e0;
+    --shadow: 0 1px 0 rgba(0, 0, 0, 0.14);
+    --press: brightness(0.88);
+    --radius: 10px;
+    --gap: 6px;
+    /* Latin text uses a font where capital I (with bars) and small l (with a
+       tail) look different: Verdana or Tahoma (Windows, Mac, iPhone), else a
+       built-in monospace font (Android, Linux). Chinese falls through to the
+       CJK fonts after it. Only fonts already on the device; nothing downloads. */
+    --font: Verdana, Tahoma, "DejaVu Sans Mono", "Noto Sans Mono", "Droid Sans Mono", "Roboto Mono",
+        Menlo, Consolas, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", monospace;
+
+    /* candidate bar */
+    --cand: #f7f8fa;
+    --cand-first: #2563eb; /* slot 1: what Space commits */
+    --accent: #2563eb;      /* cursor, word being typed */
+    --muted: #8a919c;
+
+    /* key colors: background / label */
+    --input-bg: #ffffff;    --input-fg: #1d2129;  /* letters, consonants, numbers */
+    --group-bg: #e3edff;    --group-fg: #1e4fbf;  /* consonant groups */
+    --vowel-bg: #efe6ff;    --vowel-fg: #6b35c9;  /* vowels */
+    --coda-bg: #e2f5ea;     --coda-fg: #17794a;   /* codas */
+    --tone-bg: #fff1d6;     --tone-fg: #a35a00;   /* tones */
+    --punc-bg: #dff4f6;     --punc-fg: #0f6f7a;   /* punctuation */
+    --space-bg: #ffffff;    --space-fg: #1d2129;  /* space */
+    --control-bg: #d6dbe3;  --control-fg: #2f3640; /* fn, exit, menus */
+    --delete-bg: #fde3e3;   --delete-fg: #b42323; /* backspace, clear */
+    --on-ring: #1e4fbf;     /* selected consonant group */
+    --off-fg: #b4bac4;      /* disabled */
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #15171b;
+        --surface: #1e2127;
+        --text: #e8eaee;
+        --border: #30353e;
+        --shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+        --press: brightness(1.25);
+        --cand: #1e2127;
+        --cand-first: #7aa7ff;
+        --accent: #7aa7ff;
+        --muted: #6b717c;
+
+        --input-bg: #2a2e36;    --input-fg: #e8eaee;
+        --group-bg: #1f2f52;    --group-fg: #a9c4ff;
+        --vowel-bg: #2e2347;    --vowel-fg: #cbb2ff;
+        --coda-bg: #18382a;     --coda-fg: #8fdcb0;
+        --tone-bg: #3d2d12;     --tone-fg: #ffc46b;
+        --punc-bg: #133a3f;     --punc-fg: #86dde6;
+        --space-bg: #2a2e36;    --space-fg: #e8eaee;
+        --control-bg: #3a404b;  --control-fg: #d3d8e0;
+        --delete-bg: #45201f;   --delete-fg: #ff9b95;
+        --on-ring: #a9c4ff;
+        --off-fg: #555b66;
+    }
+}
+
 * {
     box-sizing: border-box;
 }
@@ -9,40 +75,234 @@ body {
     height: 100%;
     margin: 0;
     overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    -webkit-tap-highlight-color: transparent;
 }
 
-/* Main Flex Wrapper */
 .app-container {
     display: flex;
     flex-direction: column;
     width: 100vw;
     height: 100vh;
+    height: 100dvh; /* mobile: ignore the browser bars */
+    padding: var(--gap);
+    padding-bottom: max(var(--gap), env(safe-area-inset-bottom));
+    gap: var(--gap);
 }
 
-/* Top Textarea Header Structure */
+/* ---- text area ----
+   main.js stacks two layers: .buffer-view (what you see: text, the word being
+   typed underlined, a cursor that doesn't blink) under .buffer-input (the
+   textarea, invisible, which takes taps to move the cursor). Both must share
+   the same box and font so a tap lands on the right character. */
+
 .header-area {
-    height: 20%; /* Adjust header proportion here */
+    position: relative;
+    height: 36%;
     width: 100%;
     flex-shrink: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    overflow: hidden;
+}
+
+.header-area:focus-within {
+    border-color: var(--accent);
+}
+
+.header-area textarea,
+.buffer-view {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 12px 14px;
+    padding-right: 52px; /* room for the language mark */
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font: 400 clamp(1.8rem, 8vw, 2.8rem) / 1.4 var(--font);
+    letter-spacing: normal;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: normal;
+    overflow-y: auto;
+    scrollbar-width: none; /* a scrollbar would make the two layers wrap differently */
+}
+
+.header-area textarea::-webkit-scrollbar,
+.buffer-view::-webkit-scrollbar {
+    display: none;
 }
 
 .header-area textarea {
-    width: 100%;
-    height: 100%;
     resize: none;
-    display: block;
+    outline: none;
 }
+
+.header-area textarea.buffer-input {
+    z-index: 1;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    caret-color: transparent; /* the steady cursor is drawn in .buffer-view */
+}
+
+.header-area textarea::placeholder {
+    color: var(--muted);
+    -webkit-text-fill-color: var(--muted);
+}
+
+.buffer-view {
+    pointer-events: none;
+}
+
+.buffer-view .pending {
+    color: var(--accent);
+    text-decoration: underline 2px;
+    text-underline-offset: 0.18em;
+}
+
+.buffer-view .caret {
+    display: inline-block;
+    width: 0;
+    height: 1.15em;
+    margin-right: -2px;
+    border-left: 2px solid var(--accent);
+    vertical-align: -0.2em;
+}
+
+.header-area:not(:focus-within) .caret {
+    opacity: 0.35;
+}
+
+.status-mark {
+    position: absolute;
+    z-index: 2;
+    top: 8px;
+    right: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--control-bg);
+    color: var(--control-fg);
+    font: 600 0.85rem / 1.4 var(--font);
+    pointer-events: none;
+}
+
+/* ---- candidate bar + keys ---- */
 
 .button-grid {
     flex: 1;
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    grid-template-rows: 5fr 6fr 6fr;
+    grid-template-rows: 4fr 6fr 6fr;
+    gap: var(--gap);
     width: 100%;
-    height: 100%;
+    min-height: 0;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .button-grid button {
     width: 100%;
     height: 100%;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius);
+    background: var(--input-bg);
+    color: var(--input-fg);
+    box-shadow: var(--shadow);
+    font: 500 1.5rem / 1 var(--font); /* main.js sets the size, shared per row */
+    letter-spacing: 0.01em;
+    white-space: pre; /* one line, unless main.js splits a long label in two */
+    line-height: 1.15;
+    overflow: hidden;
+    cursor: pointer;
+    touch-action: manipulation; /* no double-tap zoom on fast typing */
+    transition: filter 60ms, transform 60ms;
+}
+
+.button-grid button:active {
+    filter: var(--press);
+    transform: translateY(1px);
+    box-shadow: none;
+}
+
+/* key colors by what the key does (data-kind is set in main.js) */
+.button-grid button[data-kind="group"]   { background: var(--group-bg);   color: var(--group-fg); }
+.button-grid button[data-kind="vowel"]   { background: var(--vowel-bg);   color: var(--vowel-fg); }
+.button-grid button[data-kind="coda"]    { background: var(--coda-bg);    color: var(--coda-fg); }
+.button-grid button[data-kind="tone"]    { background: var(--tone-bg);    color: var(--tone-fg); }
+.button-grid button[data-kind="punc"]    { background: var(--punc-bg);    color: var(--punc-fg); }
+.button-grid button[data-kind="space"]   { background: var(--space-bg);   color: var(--space-fg); }
+.button-grid button[data-kind="control"] { background: var(--control-bg); color: var(--control-fg); }
+.button-grid button[data-kind="delete"]  { background: var(--delete-bg);  color: var(--delete-fg); }
+
+/* Candidates: the bar (row "0"), and every slot of the expanded list */
+.button-grid button[data-kind="cand"],
+.button-grid button[data-kind="more"] {
+    background: var(--cand);
+    color: var(--text);
+    box-shadow: none;
+    border: 1px solid var(--border);
+    font-weight: 400;
+}
+
+.button-grid button[data-kind="more"] {
+    color: var(--control-fg);
+    font-weight: 600;
+}
+
+/* Slot 1: what Space commits */
+.button-grid button.first[data-kind="cand"] {
+    color: var(--cand-first);
+    border-color: var(--cand-first);
+    font-weight: 600;
+}
+
+/* Nothing in this slot */
+.button-grid button[data-kind="empty"],
+.button-grid button[data-kind="none"] {
+    background: transparent;
+    box-shadow: none;
+    border: 1px dashed var(--border);
+    cursor: default;
+}
+
+.button-grid button[data-kind="empty"]:active,
+.button-grid button[data-kind="none"]:active {
+    filter: none;
+    transform: none;
+}
+
+/* Disabled keys (codas after a coda, after ㄭ/ㄦ) */
+.button-grid button.off,
+.button-grid button:disabled {
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--off-fg);
+    box-shadow: none;
+    cursor: default;
+    filter: saturate(0.3);
+    transform: none;
+}
+
+/* Selected consonant group */
+.button-grid button.on {
+    box-shadow: inset 0 0 0 3px var(--on-ring);
+}
+
+/* Short screens (landscape phones): smaller text area */
+@media (max-height: 500px) {
+    .header-area {
+        height: 26%;
+    }
+    .button-grid {
+        grid-template-rows: 3fr 5fr 5fr;
+    }
 }
