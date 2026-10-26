@@ -3,11 +3,10 @@ import {
   zh_quote_cycles, ZH_NO_INITIAL, EN_NO_CAPITAL_AFTER, EN_TITLES, SYM,
 } from "./maps.js";
 import { en_rank, zh_rank } from "./ranker.js";
-import { clear_filter_cache } from "./read_data.js";
+import { clear_filter_cache, zh_has_prefix } from "./read_data.js";
 
 const SLOTS = 5; // candidate buttons "00".."04"
 const ALL_SLOTS = 15; // expanded list: candidates on all 3 rows
-const MULTITAP_MS = 1000; // same key again within this time = next character
 
 const st = {
   lang: "en", // "en" | "zh"
@@ -22,7 +21,7 @@ const st = {
   expanded: false, // "…" opened: candidates cover the keys
   xpage: 0, // page of the expanded list
   caps: 0, // 0 lower, 1 Title (next word only), 2 SCREAMING (stays)
-  tap: null, // last multi-tap {id, time, base, variants, i}
+  tap: null, // multi-tap character not yet confirmed {id, base, variants, i}
 };
 
 const $ = (id) => document.getElementById(id);
@@ -121,15 +120,39 @@ function zh_seqs() {
   return seqs.filter((s) => s);
 }
 
+// Zhuyin of each final code ("61" -> ㄧ, "34" -> ㄨㄤ), from the vowel table.
+const ZH_FINAL = {};
+for (const v of zh_vowels.flat()) {
+  ZH_FINAL[v.code] = v.label;
+  v.codas?.forEach((label, i) => {
+    const code = zh_vowel_fallback[v.code][i + 1];
+    if (code === v.code + (i + 1)) ZH_FINAL[code] = label; // the key's own cell, not a fallback
+  });
+}
+ZH_FINAL["21"] = "ㄧㄞ";
+const LABIAL = new Set(["11", "12", "13", "14"]); // ㄅㄆㄇㄈ take ㄛ; others take ㄜ
+const SIBILANT = new Set(["41", "42", "43", "51", "52", "53", "54"]); // ㄓㄔㄕㄖㄗㄘㄙ (+ㄭ)
+
+// What the typed keys spell, showing only readings that exist. The keys
+// ㄐㄗ, ㄛ/ㄜ, ㄭ/ㄦ and ㄧ/ㄧㄞ stand for two sounds; the rest of the
+// syllable (or the data) picks one, e.g. ㄐㄗ + ㄧ + ˋ shows ㄐㄧˋ.
 function zh_syllable_label(c) {
-  let s = c.ini_label ?? (c.group ? zh_groups[c.group - 1].label + "?" : "");
-  if (s === "Ø") s = "";
-  if (c.vowel) {
-    const v = zh_vowel_by_code[c.vowel];
-    s += c.coda ? v.codas[c.coda - 1] : v.label;
+  if (!c.initial) return c.group ? zh_groups[c.group - 1].label + "?" : "";
+  const tone = c.tone ? zh_tones.find(([, t]) => t === c.tone)[0] : "";
+  let ini = c.ini_label === "Ø" ? "" : c.ini_label;
+  if (!c.vowel) return ini;
+  let finals = zh_syllable_codes(c).map((code) => code.slice(c.initial.length, code.length - (c.tone ? 1 : 0)));
+  if (finals.length > 1) { // keep the spellings the dictionary has
+    const real = finals.filter((f) => zh_has_prefix(c.initial + f + (c.tone ?? "")));
+    if (real.length) finals = real;
   }
-  if (c.tone) s += zh_tones.find(([, t]) => t === c.tone)[0];
-  return s;
+  let fin = finals.map((f) => {
+    if (f === "5") return LABIAL.has(c.initial) ? "ㄛ" : c.initial === ZH_NO_INITIAL ? "ㄛ/ㄜ" : "ㄜ";
+    if (f === "9") return SIBILANT.has(c.initial) ? "" : "ㄦ"; // ㄓ, not ㄓㄭ
+    return ZH_FINAL[f] ?? "?";
+  }).join("/");
+  if (ini.length === 2) ini = /^[ㄧㄩ]/.test(fin) ? ini[0] : ini[1]; // ㄐㄑㄒ before ㄧ ㄩ, else ㄗㄘㄙ
+  return ini + fin + tone;
 }
 
 function zh_back() {
@@ -252,30 +275,31 @@ function on_candidate(col) {
   }
 }
 
-// Expanded list: slot 4 (top right) closes it; if more candidates remain than
-// fit, slot 14 (bottom right) shows the next page. Returns [label, action]
-// for each of the 15 slots, row by row.
+// Expanded list: candidates in the left 4 columns (12 per page); the right
+// column is ✕ close, ▲ previous page, ▼ next page. Returns [label, action]
+// for each of the 15 slots, row by row; off = the page button can't be used.
+const X_PER = 12, X_SIDE = { 4: ["✕", "close"], 9: ["▲", "prev"], 14: ["▼", "next"] };
 function expanded_slots() {
-  const free = ALL_SLOTS - 1;
-  const more = st.cands.length > free;
-  const per = more ? free - 1 : free;
-  const start = st.xpage * per;
+  const pages = Math.max(1, Math.ceil(st.cands.length / X_PER));
   const out = [];
-  let i = start;
+  let i = st.xpage * X_PER;
   for (let s = 0; s < ALL_SLOTS; s++) {
-    if (s === 4) out.push(["▲", "close"]);
-    else if (more && s === ALL_SLOTS - 1) out.push(["▼", "more"]);
-    else if (i < st.cands.length) out.push([shown(st.cands[i]), i++]);
+    if (X_SIDE[s]) {
+      const [label, act] = X_SIDE[s];
+      const off = (act === "prev" && st.xpage === 0) || (act === "next" && st.xpage >= pages - 1);
+      out.push([label, act, off]);
+    } else if (i < st.cands.length) out.push([shown(st.cands[i]), i++]);
     else out.push(["", null]);
   }
-  return { out, per, more };
+  return out;
 }
 
 function on_expanded(slot) {
-  const { out, per } = expanded_slots();
-  const [, act] = out[slot];
+  const [, act, off] = expanded_slots()[slot];
+  if (off) return;
   if (act === "close") st.expanded = false;
-  else if (act === "more") st.xpage = (st.xpage + 1) * per < st.cands.length ? st.xpage + 1 : 0;
+  else if (act === "prev") st.xpage--;
+  else if (act === "next") st.xpage++;
   else if (typeof act === "number") {
     commit(st.cands[act]);
     refresh_cands();
@@ -284,17 +308,17 @@ function on_expanded(slot) {
 
 // ------------------------------------------------------------ inserting text
 
-// Multi-tap: the same key again within MULTITAP_MS replaces what it inserted.
+// Multi-tap: the same key again always cycles to its next character. Space or
+// any other key confirms it (no time limit).
 function multitap(id, variants, insert) {
-  const now = Date.now(), t = st.tap;
-  if (t && t.id === id && now - t.time < MULTITAP_MS) {
+  const t = st.tap;
+  if (t && t.id === id) {
     t.i = (t.i + 1) % t.variants.length;
-    t.time = now;
     st.text = t.base;
     insert(t.variants[t.i]);
     return;
   }
-  st.tap = { id, time: now, base: st.text, variants, i: 0 };
+  st.tap = { id, base: st.text, variants, i: 0 };
   insert(variants[0]);
 }
 
@@ -349,15 +373,46 @@ function quote_variants(base) {
 
 // ------------------------------------------------------------ keys
 
+// Read the text aloud. The voice depends on the text, not the current mode:
+// Chinese runs (Han, Zhuyin, full-width punctuation) use a Chinese voice,
+// everything else an English one, queued in order.
+const ZH_RUN = /[\p{Script=Han}\u3100-\u312f\u31a0-\u31bf\u3000-\u303f\uff00-\uffef]/u;
+
+function speech_runs(text) {
+  const runs = [];
+  for (const ch of text) {
+    const lang = ZH_RUN.test(ch) ? "zh-TW" : /[A-Za-z0-9]/.test(ch) ? "en-US" : null; // null: joins either side
+    const last = runs.at(-1);
+    if (last && (lang === null || last.lang === null || last.lang === lang)) {
+      last.text += ch;
+      last.lang ??= lang;
+    } else runs.push({ lang, text: ch });
+  }
+  return runs.filter((r) => r.lang && /\S/.test(r.text));
+}
+
+function voice_for(lang) {
+  const voices = speechSynthesis.getVoices();
+  const base = lang.split("-")[0];
+  return voices.find((v) => v.lang.replace("_", "-") === lang) ?? voices.find((v) => v.lang.startsWith(base));
+}
+
 function speak() {
   if (!("speechSynthesis" in globalThis)) return;
-  const u = new SpeechSynthesisUtterance(st.text + st.after);
-  u.lang = st.lang === "zh" ? "zh-TW" : "en-US";
-  speechSynthesis.speak(u);
+  speechSynthesis.cancel(); // pressing again restarts instead of queueing twice
+  for (const { lang, text } of speech_runs(st.text + st.after)) {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = lang;
+    const v = voice_for(lang);
+    if (v) u.voice = v;
+    speechSynthesis.speak(u);
+  }
 }
+globalThis.speechSynthesis?.getVoices(); // the voice list loads lazily in some browsers
 
 function on_key(id, key) {
   if (key.off) return;
+  const tapping = st.tap; // a multi-tap character waiting to be confirmed
   if (!["tap", "raw", "letter", "pair", "quote"].includes(key.act)) st.tap = null;
   const c = st.zh_cur;
   switch (key.act) {
@@ -371,13 +426,16 @@ function on_key(id, key) {
         if (st.cands.length) commit(st.cands[0]); // keys that match no word stay for backspace
       } else if (st.mode === "main" && st.lang === "zh" && zh_composing()) {
         if (st.cands.length) commit(st.cands[0]);
-      } else insert_raw(" ");
+      } else if (!tapping) insert_raw(" "); // with a multi-tap character waiting, Space only confirms it
       break;
     case "bs":
-      st.tap = null;
       if (st.mode === "main" && st.lang === "en" && st.en_buf) st.en_buf = st.en_buf.slice(0, -1);
       else if (st.mode === "main" && st.lang === "zh" && zh_composing()) zh_back();
-      else delete_back();
+      else if (st.mode === "main") delete_back();
+      else if (tapping) { // multi-tap modes: one character at a time; a waiting one goes first
+        st.text = tapping.base;
+        clear_filter_cache();
+      } else delete_last_char();
       break;
     case "fn":
       commit_pending();
@@ -464,12 +522,18 @@ function on_key(id, key) {
 
 // Key color groups (style.css colors buttons by data-kind).
 const KIND = {
-  key: "input", letter: "input", raw: "input", zh_initial: "input",
+  key: "group", // English letter-group keys reuse the Zhuyin consonant-group color
+  letter: "input", raw: "input", zh_initial: "input",
   zh_group: "group", zh_vowel: "vowel", zh_coda: "coda", zh_tone: "tone",
-  tap: "punc", pair: "punc", quote: "punc", punc: "control",
-  space: "space", bs: "delete", clear: "delete",
-  fn: "control", exit: "control", mode: "control", lang: "control", caps: "control",
-  newline: "control", copy: "control", tts: "control", none: "none",
+  tap: "punc", pair: "punc", quote: "punc", space: "space",
+  // Function keys, by what they do:
+  //   menu    opens another set of keys (Fn, 123, ?!, abc…, "…" in the bar)
+  //   edit    changes the text right away (⌫, ↵, ⌧)
+  //   action  leaves the text alone: ⇧, ⧉, 🔊, EN⇄中, ▲ (closes the candidate list)
+  //   fn      Fn and ✕, which share the top-left corner: their own color
+  fn: "fn", exit: "fn", mode: "menu", punc: "menu",
+  bs: "edit", newline: "edit", clear: "edit",
+  lang: "action", caps: "action", copy: "action", tts: "action", none: "none",
 };
 
 // Label sizes. All keys share one size (and the candidates another), so "T"
@@ -541,14 +605,14 @@ function fit_all() {
 
 function draw_buttons() {
   if (st.expanded) {
-    const { out } = expanded_slots();
-    out.forEach(([label, act], s) => {
+    expanded_slots().forEach(([label, act, off], s) => {
       const el = $("" + Math.floor(s / 5) + (s % 5));
       el.innerText = label;
-      el.disabled = false;
-      el.classList.remove("off", "on");
+      el.disabled = !!off;
+      el.classList.remove("on");
+      el.classList.toggle("off", !!off);
       el.classList.toggle("first", s === 0 && st.xpage === 0);
-      el.dataset.kind = typeof act === "number" ? "cand" : act === null ? "empty" : "control";
+      el.dataset.kind = typeof act === "number" ? "cand" : act === null ? "empty" : act === "close" ? "action" : "menu";
     });
     return fit_all();
   }
@@ -569,7 +633,7 @@ function draw_buttons() {
     el.dataset.kind = "cand";
     if (st.cands.length > SLOTS && i === SLOTS - 1) {
       el.innerText = "…";
-      el.dataset.kind = "more";
+      el.dataset.kind = "menu";
     } else el.innerText = start + i < st.cands.length ? shown(st.cands[start + i]) : "";
     if (el.innerText === "") el.dataset.kind = "empty";
     el.classList.toggle("first", i === 0 && el.innerText !== "");
@@ -623,8 +687,13 @@ function draw_text() {
   }
   box.value = st.text + pending + st.after;
   box.setSelectionRange(caret, caret);
+  // A multi-tap character not yet confirmed is shown like a word being typed.
+  // (Punctuation can remove the space before it, so compare from the start.)
+  let cut = st.text.length;
+  if (st.tap) for (cut = 0; cut < st.tap.base.length && st.tap.base[cut] === st.text[cut]; cut++);
+  const before = st.text.slice(0, cut), waiting = st.text.slice(cut) + pending;
   // A trailing newline needs something after it, or the last empty line has no height.
-  view.replaceChildren(st.text, span("pending", pending), span("caret", ""), st.after + "\u200b");
+  view.replaceChildren(before, span("pending", waiting), span("caret", ""), st.after + "\u200b");
   const c = view.querySelector(".caret"), line = c.offsetHeight;
   if (c.offsetTop < box.scrollTop) box.scrollTop = c.offsetTop;
   else if (c.offsetTop + line > box.scrollTop + box.clientHeight) box.scrollTop = c.offsetTop + line - box.clientHeight;

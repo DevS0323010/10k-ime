@@ -108,6 +108,12 @@ const zh_keys = ZH_KEYED.exact.map((p) => p[0]);
 const zh_phr = ZH_KEYED.phrases, zh_phr_keys = Object.keys(zh_phr);
 const zh_cache = new Map(), zh_chr_cache = new Map();
 
+// Does any word's code start with p? (Is this syllable spelling real?)
+export function zh_has_prefix(p) {
+  const i = lower_bound(zh_keys, p);
+  return i < zh_keys.length && zh_keys[i].startsWith(p);
+}
+
 // All words whose code starts with p: [[word, count], ...] best first.
 export function zh_lookup(p) {
   let r = zh_cache.get(p);

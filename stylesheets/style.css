@@ -2,6 +2,17 @@
    Colors are tokens so light and dark mode only swap values.
    Label size is set per button by fit_text() in main.js (largest that fits). */
 
+/* Zhuyin tone marks (ˇˋˊ˙ˉ) come out with no width in some Latin fonts
+   (Verdana on Windows). Draw just those five from a Chinese font already on
+   the device. Nothing is downloaded. */
+@font-face {
+    font-family: "Zhuyin Tones";
+    src: local("Microsoft JhengHei"), local("Microsoft JhengHei UI"), local("PingFang TC"),
+        local("PingFangTC-Regular"), local("Heiti TC"), local("Noto Sans CJK TC"), local("NotoSansCJKtc-Regular"),
+        local("Noto Sans TC"), local("Source Han Sans TC"), local("Noto Sans CJK JP"), local("IPAGothic");
+    unicode-range: U+02C7, U+02C9-02CB, U+02D9;
+}
+
 :root {
     --bg: #eef0f3;
     --surface: #ffffff;
@@ -15,7 +26,7 @@
        tail) look different: Verdana or Tahoma (Windows, Mac, iPhone), else a
        built-in monospace font (Android, Linux). Chinese falls through to the
        CJK fonts after it. Only fonts already on the device; nothing downloads. */
-    --font: Verdana, Tahoma, "DejaVu Sans Mono", "Noto Sans Mono", "Droid Sans Mono", "Roboto Mono",
+    --font: "Zhuyin Tones", Verdana, Tahoma, "DejaVu Sans Mono", "Noto Sans Mono", "Droid Sans Mono", "Roboto Mono",
         Menlo, Consolas, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", monospace;
 
     /* candidate bar */
@@ -32,8 +43,11 @@
     --tone-bg: #fff1d6;     --tone-fg: #a35a00;   /* tones */
     --punc-bg: #dff4f6;     --punc-fg: #0f6f7a;   /* punctuation */
     --space-bg: #ffffff;    --space-fg: #1d2129;  /* space */
-    --control-bg: #d6dbe3;  --control-fg: #2f3640; /* fn, exit, menus */
-    --delete-bg: #fde3e3;   --delete-fg: #b42323; /* backspace, clear */
+    /* function keys */
+    --fn-bg: #2563eb;       --fn-fg: #ffffff;     /* Fn and ✕ (same corner) */
+    --menu-bg: #4a5466;     --menu-fg: #ffffff;   /* opens a menu: Fn 123 ?! abc… "…" */
+    --edit-bg: #fde3e3;     --edit-fg: #b42323;   /* changes the text: ⌫ ↵ ⌧ */
+    --action-bg: #d6dbe3;   --action-fg: #2f3640; /* leaves the text: ✕ ⇧ ⧉ 🔊 EN⇄中 */
     --on-ring: #1e4fbf;     /* selected consonant group */
     --off-fg: #b4bac4;      /* disabled */
 }
@@ -58,8 +72,10 @@
         --tone-bg: #3d2d12;     --tone-fg: #ffc46b;
         --punc-bg: #133a3f;     --punc-fg: #86dde6;
         --space-bg: #2a2e36;    --space-fg: #e8eaee;
-        --control-bg: #3a404b;  --control-fg: #d3d8e0;
-        --delete-bg: #45201f;   --delete-fg: #ff9b95;
+        --fn-bg: #7aa7ff;       --fn-fg: #0d1526;
+        --menu-bg: #8d9ab0;     --menu-fg: #11141a;
+        --edit-bg: #45201f;     --edit-fg: #ff9b95;
+        --action-bg: #3a404b;   --action-fg: #d3d8e0;
         --on-ring: #a9c4ff;
         --off-fg: #555b66;
     }
@@ -187,8 +203,8 @@ body {
     right: 8px;
     padding: 2px 8px;
     border-radius: 999px;
-    background: var(--control-bg);
-    color: var(--control-fg);
+    background: var(--action-bg);
+    color: var(--action-fg);
     font: 600 0.85rem / 1.4 var(--font);
     pointer-events: none;
 }
@@ -240,12 +256,13 @@ body {
 .button-grid button[data-kind="tone"]    { background: var(--tone-bg);    color: var(--tone-fg); }
 .button-grid button[data-kind="punc"]    { background: var(--punc-bg);    color: var(--punc-fg); }
 .button-grid button[data-kind="space"]   { background: var(--space-bg);   color: var(--space-fg); }
-.button-grid button[data-kind="control"] { background: var(--control-bg); color: var(--control-fg); }
-.button-grid button[data-kind="delete"]  { background: var(--delete-bg);  color: var(--delete-fg); }
+.button-grid button[data-kind="fn"]      { background: var(--fn-bg);      color: var(--fn-fg); font-weight: 600; }
+.button-grid button[data-kind="menu"]    { background: var(--menu-bg);    color: var(--menu-fg); }
+.button-grid button[data-kind="edit"]    { background: var(--edit-bg);    color: var(--edit-fg); }
+.button-grid button[data-kind="action"]  { background: var(--action-bg);  color: var(--action-fg); }
 
 /* Candidates: the bar (row "0"), and every slot of the expanded list */
-.button-grid button[data-kind="cand"],
-.button-grid button[data-kind="more"] {
+.button-grid button[data-kind="cand"] {
     background: var(--cand);
     color: var(--text);
     box-shadow: none;
@@ -253,10 +270,6 @@ body {
     font-weight: 400;
 }
 
-.button-grid button[data-kind="more"] {
-    color: var(--control-fg);
-    font-weight: 600;
-}
 
 /* Slot 1: what Space commits */
 .button-grid button.first[data-kind="cand"] {
