@@ -52,7 +52,9 @@ Single letters, punctuation, numbers and single Zhuyin use multi-tap with **no t
 
 - **Stage-based input**: the keys relabel after each press.
   1. **Consonant group**: ㄅ / ㄉ / ㄍ / ㄐㄗ / ㄓ on the bottom row, then the exact initial on the top row. ㄐㄗ, ㄑㄘ and ㄒㄙ share a key, and **Ø** means no initial.
-  2. **Vowel**: ㄚ, ㄧㄚ, ㄨㄚ, ㄩ, ㄛ/ㄜ, ㄧㄝ, ㄨㄛ, ㄩㄝ, ㄭ/ㄦ.
+  2. **Vowel**: ㄚ, ㄧㄚ, ㄨㄚ, ㄩ, ㄛ/ㄜ/ㄝ, ㄧㄝ, ㄨㄛ, ㄩㄝ, Ø/ㄦ (Ø is the empty rime ㄭ, as in ㄓ 知; like Ø for "no initial").
+
+  Consonant-group and vowel keys show, on a smaller second line, the other sounds they lead to: the rest of the group (ㄅ over ㄆ·ㄇ·ㄈ) or the endings reachable from that vowel written in full (ㄛ/ㄜ/ㄝ over ㄟ·ㄡ·ㄣ·ㄥ, ㄨㄛ over ㄨㄟ·ㄨ·ㄨㄣ·ㄨㄥ). A long list splits over two small lines on narrow keys. Once a consonant is picked, the vowel and coda keys only show what the dictionary has with it: ㄛ/ㄜ/ㄝ narrows to ㄛ after ㄅㄆㄇㄈ, Ø/ㄦ to Ø after ㄓㄔㄕㄖㄗㄘㄙ, ㄧㄞ is dropped except after Ø (崖), and a vowel that leads to nothing (ㄅ + ㄩ) is greyed out.
   3. **Coda and tone**: the top row shows the codas for that vowel (for example ㄞ ㄠ ㄢ ㄤ after ㄚ) and the bottom row the five tones **ˇ ˋ ˊ ˙ ˉ**. ˉ is its own key for the first tone. A tone finishes the syllable.
 - **Coda fallbacks**: a vowel and coda that don't form a real final go to the closest one (for example ㄨㄚ + ㄨ → ㄨ).
 - **Clean composition text**: the text box shows only readings that can occur. ㄐㄗ + ㄧ/ㄧㄞ + ˋ shows as ㄐㄧˋ.

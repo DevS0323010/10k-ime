@@ -205,7 +205,7 @@ body {
     border-radius: 999px;
     background: var(--action-bg);
     color: var(--action-fg);
-    font: 600 3rem var(--font);
+    font: 600 0.85rem / 1.4 var(--font);
     pointer-events: none;
 }
 
@@ -243,7 +243,8 @@ body {
     transition: filter 60ms, transform 60ms;
 }
 
-.button-grid button:active {
+.button-grid button:active,
+.button-grid button.pressed {
     filter: var(--press);
     transform: translateY(1px);
     box-shadow: none;
@@ -291,6 +292,16 @@ body {
 .button-grid button[data-kind="none"]:active {
     filter: none;
     transform: none;
+}
+
+/* The smaller second line of a Chinese key label: ㄅ over ㄆㄇㄈ.
+   main.js sets its size. */
+.button-grid button .sub {
+    display: block;
+    line-height: 1.2;
+    margin-top: 0.2em;
+    font-weight: 400;
+    opacity: 0.75;
 }
 
 /* Disabled keys (codas after a coda, after ㄭ/ㄦ) */

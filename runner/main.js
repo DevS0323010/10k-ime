@@ -94,7 +94,7 @@ function zh_stage(c) {
   if (!c.initial) return "member";
   if (!c.vowel) return "vowel";
   if (!c.coda && zh_vowel_by_code[c.vowel].codas) return "coda";
-  return "tone"; // after a coda, or after ㄭ/ㄦ
+  return "tone"; // after a coda, or after Ø/ㄦ (ㄭ)
 }
 
 // Alternative codes of one (possibly unfinished) syllable.
@@ -135,9 +135,23 @@ for (const v of zh_vowels.flat()) {
 ZH_FINAL["21"] = "ㄧㄞ";
 const LABIAL = new Set(["11", "12", "13", "14"]); // ㄅㄆㄇㄈ take ㄛ; others take ㄜ
 const SIBILANT = new Set(["41", "42", "43", "51", "52", "53", "54"]); // ㄓㄔㄕㄖㄗㄘㄙ (+ㄭ)
+const FINAL_CODE = Object.fromEntries(Object.entries(ZH_FINAL).map(([code, label]) => [label, code]));
+
+// Does the dictionary have a syllable with this initial and final (any tone,
+// or the given one)? Finals vary in length, so the tone letter ends the match.
+function zh_syllable_exists(initial, final, tone) {
+  return [...(tone ?? "abcde")].some((t) => zh_has_prefix(initial + final + t));
+}
+
+// How a final reads after a given initial: ㄛ/ㄜ/ㄝ and Ø/ㄦ narrow to one.
+function final_label(code, initial) {
+  if (code === "5") return LABIAL.has(initial) ? "ㄛ" : initial === ZH_NO_INITIAL ? "ㄛ/ㄜ/ㄝ" : "ㄜ";
+  if (code === "9") return SIBILANT.has(initial) ? "Ø" : initial === ZH_NO_INITIAL ? "ㄦ" : "Ø/ㄦ";
+  return ZH_FINAL[code] ?? "?";
+}
 
 // What the typed keys spell, showing only readings that exist. The keys
-// ㄐㄗ, ㄛ/ㄜ, ㄭ/ㄦ and ㄧ/ㄧㄞ stand for two sounds; the rest of the
+// ㄐㄗ, ㄛ/ㄜ/ㄝ, Ø/ㄦ and ㄧ/ㄧㄞ stand for more than one sound; the rest of the
 // syllable (or the data) picks one, e.g. ㄐㄗ + ㄧ + ˋ shows ㄐㄧˋ.
 function zh_syllable_label(c) {
   if (!c.initial) return c.group ? zh_groups[c.group - 1].label + "?" : "";
@@ -146,14 +160,10 @@ function zh_syllable_label(c) {
   if (!c.vowel) return ini;
   let finals = zh_syllable_codes(c).map((code) => code.slice(c.initial.length, code.length - (c.tone ? 1 : 0)));
   if (finals.length > 1) { // keep the spellings the dictionary has
-    const real = finals.filter((f) => zh_has_prefix(c.initial + f + (c.tone ?? "")));
+    const real = finals.filter((f) => zh_syllable_exists(c.initial, f, c.tone));
     if (real.length) finals = real;
   }
-  let fin = finals.map((f) => {
-    if (f === "5") return LABIAL.has(c.initial) ? "ㄛ" : c.initial === ZH_NO_INITIAL ? "ㄛ/ㄜ" : "ㄜ";
-    if (f === "9") return SIBILANT.has(c.initial) ? "" : "ㄦ"; // ㄓ, not ㄓㄭ
-    return ZH_FINAL[f] ?? "?";
-  }).join("/");
+  let fin = finals.map((f) => (final_label(f, c.initial) === "Ø" ? "" : final_label(f, c.initial))).join("/"); // ㄓ, not ㄓㄭ
   if (ini.length === 2) ini = /^[ㄧㄩ]/.test(fin) ? ini[0] : ini[1]; // ㄐㄑㄒ before ㄧ ㄩ, else ㄗㄘㄙ
   return ini + fin + tone;
 }
@@ -172,6 +182,42 @@ function zh_back() {
 
 // ------------------------------------------------------------ layouts
 
+// Chinese keys also list, small on a second line, the other sounds they lead
+// to: ㄅ over ㄆ·ㄇ·ㄈ for a consonant group, ㄛ/ㄜ/ㄝ over ㄟ·ㄡ·ㄣ·ㄥ for a vowel.
+const ZH_GROUP_SUB = Object.fromEntries(zh_groups.map((g) => {
+  const ms = g.members.map(([m]) => m).filter((m) => m !== "Ø");
+  const all = [...ms.map((m) => m[0]), ...ms.map((m) => m.slice(1))].join(""); // ㄐㄑㄒ then ㄗㄘㄙ
+  return [g.code, [...new Set(all)].filter((ch) => !g.label.includes(ch)).join("·")];
+}));
+
+// Labels after a consonant is picked only show what exists with it: the vowel
+// key's own sound narrows (ㄅ: ㄛ, ㄓ: Ø), and the list and coda keys drop
+// finals the dictionary never has with that consonant (ㄧㄞ outside 崖).
+const real_final = (part, initial) => !FINAL_CODE[part] || zh_syllable_exists(initial, FINAL_CODE[part]);
+
+// The finals a vowel key leads to, in full: ㄨㄛ -> ㄨㄟ·ㄨ·ㄨㄣ·ㄨㄥ.
+function vowel_sub(v, initial) {
+  if (!v.codas) return "";
+  const out = [];
+  for (const part of v.codas.flatMap((c) => c.split("/")))
+    if (part !== v.label && !out.includes(part) && real_final(part, initial)) out.push(part);
+  return out.join("·");
+}
+// A vowel key that leads to nothing with this consonant is greyed out (ㄅ + ㄩ).
+const vowel_key = (initial) => (v) => {
+  const sub = vowel_sub(v, initial);
+  const off = !sub && !zh_syllable_exists(initial, v.code);
+  return { ...K(final_label(v.code, initial), "zh_vowel", v.code, off), sub };
+};
+
+// A coda key such as ㄧ/ㄧㄞ keeps only the readings that exist.
+function coda_label(label, initial) {
+  const parts = label.split("/");
+  if (parts.length < 2) return label;
+  const real = parts.filter((p) => real_final(p, initial));
+  return (real.length ? real : parts).join("/");
+}
+
 function main_layout() {
   if (st.lang === "en") {
     const l = en_layouts.main.map((row) => [...row]);
@@ -179,7 +225,7 @@ function main_layout() {
     return l;
   }
   const c = st.zh_cur, stage = zh_stage(c), BS = K(SYM.bs, "bs");
-  const groups = zh_groups.map((g) => K(g.label, "zh_group", g.code));
+  const groups = zh_groups.map((g) => ({ ...K(g.label, "zh_group", g.code), sub: ZH_GROUP_SUB[g.code] }));
   const tones = zh_tones.map(([label, t]) => K(label, "zh_tone", t));
   switch (stage) {
     case "consonant":
@@ -191,13 +237,13 @@ function main_layout() {
     }
     case "vowel":
       return [
-        [...zh_vowels[0].map((v) => K(v.label, "zh_vowel", v.code)), BS],
-        zh_vowels[1].map((v) => K(v.label, "zh_vowel", v.code)),
+        [...zh_vowels[0].map(vowel_key(c.initial)), BS],
+        zh_vowels[1].map(vowel_key(c.initial)),
       ];
     default: { // coda or tone
       const v = zh_vowel_by_code[c.vowel];
       const codas = [0, 1, 2, 3].map((i) =>
-        v.codas ? K(v.codas[i], "zh_coda", String(i + 1), stage === "tone") : K("", "none", null, true));
+        v.codas ? K(coda_label(v.codas[i], c.initial), "zh_coda", String(i + 1), stage === "tone") : K("", "none", null, true));
       return [[...codas, BS], tones];
     }
   }
@@ -563,20 +609,75 @@ const glyph_scale = (t) =>
 
 // h: the height to size against (the shortest button of the group, so a
 // shorter row doesn't end up with smaller labels than the rows below it).
+// A label is the main text plus, for some Chinese keys, a smaller second line
+// with the other sounds the key leads to. The main text is sized like any
+// other key; the second line is half its size, smaller if it is too wide.
+const SUB_EM = 0.5; // size of the second line, relative to the main text
+
+function set_label(el, label, sub = "") {
+  el.textContent = label;
+  if (sub) {
+    el.append(document.createElement("br")); // own line even if the stylesheet is stale
+    const s = document.createElement("span");
+    s.className = "sub";
+    s.textContent = sub;
+    el.append(s);
+    el.dataset.sub = sub;
+  } else delete el.dataset.sub;
+}
+
+const main_text = (el) => (el.dataset.sub ? el.firstChild.textContent : el.innerText);
+
 function fit_size(el, [h_share, w_share], h = el.clientHeight) {
-  const text = el.innerText;
+  const text = main_text(el);
   if (!measure || !text || !el.clientWidth) return [Infinity, Infinity];
   const cs = getComputedStyle(el);
   measure.font = `${cs.fontWeight} 100px ${cs.fontFamily}`;
   const lines = text.split("\n");
   const w = Math.max(...lines.map((l) => measure.measureText(l).width)) / 100; // width per 1px of font size
+  const rows = lines.length + (el.dataset.sub ? SUB_EM : 0); // room for one small line; more if it fits
   const fits = (el.clientWidth * ROOM_W) / Math.max(w, 0.01); // widest size that fits
-  const high = (h * 0.8) / (lines.length * 1.15); // two lines must fit too
+  const high = (h * 0.8) / (rows * 1.15); // two lines must fit too
   return [Math.min(h * h_share, el.clientWidth * w_share, fits, high), Math.min(fits, high)];
+}
+
+// Second line: SUB_EM of the main size, or smaller to fit the key's width.
+// If that comes out much smaller, the list is split over more lines (at the
+// dots), as many as fit under the main text.
+function fit_sub(el, main_px, row_px = main_px) {
+  const sub = el.querySelector(".sub");
+  if (!sub || !measure) return;
+  measure.font = `400 100px ${getComputedStyle(el).fontFamily}`;
+  const room_w = el.clientWidth * ROOM_W, want = row_px * SUB_EM;
+  const room_h = el.clientHeight * 0.85 - main_px * 1.15;
+  const parts = el.dataset.sub.split("·");
+  const split = (n) => {
+    const per = Math.ceil(parts.length / n), out = [];
+    for (let i = 0; i < parts.length; i += per) out.push(parts.slice(i, i + per).join("·"));
+    return out;
+  };
+  const size_for = (lines) => Math.min(want, room_h / (lines.length * 1.2),
+    room_w / Math.max(...lines.map((l) => measure.measureText(l).width / 100), 0.01));
+  let best = split(1), best_size = size_for(best);
+  if (best_size < want * 0.6)
+    for (let n = 2; n <= parts.length; n++) {
+      const lines = split(n), size = size_for(lines);
+      if (size > best_size * 1.1) [best, best_size] = [lines, size];
+    }
+  sub.textContent = best.join("\n");
+  sub.style.fontSize = Math.max(9, best_size) + "px";
+  // The estimate above can miss (fonts, padding): shrink until it really fits.
+  const box = el.getBoundingClientRect(), pad = el.clientHeight * 0.06;
+  for (let i = 0; i < 12 && sub.getBoundingClientRect().bottom > box.bottom - pad; i++) {
+    const now = parseFloat(sub.style.fontSize);
+    if (now > 8) sub.style.fontSize = now * 0.9 + "px";
+    else el.style.fontSize = parseFloat(el.style.fontSize) * 0.9 + "px"; // last resort: smaller main text
+  }
 }
 
 // A long Zhuyin label ("ㄚㄞㄠㄢㄤ") on one line gets tiny; put it on two.
 function maybe_wrap(el, max) {
+  if (el.dataset.sub) return;
   const g = chars(el.innerText);
   if (g.length < 4 || /[\sA-Za-z0-9]/.test(el.innerText) || TONES.test(el.innerText)) return;
   const half = Math.ceil(g.length / 2);
@@ -595,10 +696,11 @@ function fit_group(els, max, wrap = false) {
   if (!finite.length) return;
   const shared = finite[Math.floor((finite.length - 1) / 2)];
   els.forEach((el, i) => {
-    const multi = el.innerText.includes("\n");
-    const k = Math.min(glyph_scale(el.innerText), multi ? 1.3 : Infinity), [cap, fits] = sizes[i];
-    const size = Math.min(shared, cap) * k <= fits ? Math.min(shared, cap) * k : fits;
-    el.style.fontSize = Math.max(11, size) + "px";
+    const multi = el.innerText.includes("\n") || !!el.dataset.sub;
+    const k = Math.min(glyph_scale(main_text(el)), multi ? 1.3 : Infinity), [cap, fits] = sizes[i];
+    const size = Math.max(11, Math.min(shared, cap) * k <= fits ? Math.min(shared, cap) * k : fits);
+    el.style.fontSize = size + "px";
+    fit_sub(el, size, shared * k); // second line follows the row's size, not a squeezed label
   });
 }
 
@@ -615,7 +717,7 @@ function draw_buttons() {
   if (st.expanded) {
     expanded_slots().forEach(([label, act, off], s) => {
       const el = $("" + Math.floor(s / 5) + (s % 5));
-      el.innerText = label;
+      set_label(el, label);
       el.disabled = !!off;
       el.classList.remove("on");
       el.classList.toggle("off", !!off);
@@ -628,7 +730,7 @@ function draw_buttons() {
   for (let i = 0; i < 2; i++)
     for (let j = 0; j < 5; j++) {
       const el = $("" + (i + 1) + j), key = lay[i][j];
-      el.innerText = key.label;
+      set_label(el, key.label, key.sub);
       el.disabled = !!key.off;
       el.classList.toggle("off", !!key.off);
       el.classList.toggle("on", !!key.on);
@@ -639,6 +741,7 @@ function draw_buttons() {
   const per = per_page(), start = st.page * per;
   for (let i = 0; i < SLOTS; i++) {
     const el = $("0" + i);
+    set_label(el, "");
     el.dataset.kind = "cand";
     if (st.cands.length > SLOTS && i === SLOTS - 1) {
       el.innerText = "…";
@@ -756,7 +859,7 @@ document.querySelectorAll(".btn").forEach((button) => {
 const KEYBOARD = {};
 [
   ["10", "Digit1 Digit2 KeyQ KeyW"], ["11", "Digit3 Digit4 KeyE KeyR"], ["12", "Digit5 Digit6 KeyT KeyY"],
-  ["13", "Digit7 Digit8 KeyU KeyI"], ["14", "Digit9 Digit0 KeyO KeyP Backspace"],
+  ["13", "Digit7 Digit8 KeyU KeyI"], ["14", "Digit9 Digit0 KeyO KeyP"],
   ["20", "KeyA KeyS KeyZ KeyX"], ["21", "KeyD KeyF KeyC KeyV"], ["22", "KeyG KeyH KeyB KeyN"],
   ["23", "KeyJ KeyK KeyM Comma"], ["24", "KeyL Semicolon Period Slash"],
 ].forEach(([id, codes]) => codes.split(" ").forEach((c) => (KEYBOARD[c] = id)));

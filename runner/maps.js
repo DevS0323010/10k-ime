@@ -50,11 +50,11 @@ export const zh_vowels = [
     { label: "ㄩ", code: "4", codas: ["ㄩ", "ㄩ", "ㄩㄢ", "ㄩㄥ"] },
   ],
   [
-    { label: "ㄛ/ㄜ", code: "5", codas: ["ㄟ", "ㄡ", "ㄣ", "ㄥ"] },
+    { label: "ㄛ/ㄜ/ㄝ", code: "5", codas: ["ㄟ", "ㄡ", "ㄣ", "ㄥ"] },
     { label: "ㄧㄝ", code: "6", codas: ["ㄧ", "ㄧㄡ", "ㄧㄣ", "ㄧㄥ"] },
     { label: "ㄨㄛ", code: "7", codas: ["ㄨㄟ", "ㄨ", "ㄨㄣ", "ㄨㄥ"] },
     { label: "ㄩㄝ", code: "8", codas: ["ㄩ", "ㄩ", "ㄩㄣ", "ㄩㄥ"] },
-    { label: "ㄭ/ㄦ", code: "9", codas: null }, // no coda: straight to the tones
+    { label: "Ø/ㄦ", code: "9", codas: null }, // no coda: straight to the tones
   ],
 ];
 export const zh_vowel_by_code = Object.fromEntries(zh_vowels.flat().map((v) => [v.code, v]));
